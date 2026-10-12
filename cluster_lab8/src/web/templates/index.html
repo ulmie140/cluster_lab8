@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Кластерный анализ (ЛР №8)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-8 font-sans">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold text-teal-400 mb-2">Методы кластерного анализа</h1>
+        <p class="text-gray-400 mb-8">Лабораторная работа №8. Кластеризация ноутбуков по 3 признакам</p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Управление -->
+            <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 h-fit">
+                <h2 class="text-xl font-semibold mb-4 text-white">Управление алгоритмами</h2>
+                
+                <div class="space-y-6">
+                    <div class="p-4 bg-gray-700 rounded-lg border border-gray-600">
+                        <h3 class="text-lg text-teal-300 font-bold mb-2">Метод К-средних</h3>
+                        <label class="block text-sm text-gray-400 mb-1">Количество кластеров (K):</label>
+                        <input type="number" id="k_input" value="3" min="2" max="10" class="w-full bg-gray-800 rounded p-2 text-white outline-none mb-3">
+                        <button onclick="runClustering('kmeans')" class="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 rounded transition">
+                            Выполнить К-средних
+                        </button>
+                    </div>
+
+                    <div class="p-4 bg-gray-700 rounded-lg border border-gray-600">
+                        <h3 class="text-lg text-purple-300 font-bold mb-2">Метод Максимина</h3>
+                        <p class="text-xs text-gray-400 mb-3">Количество кластеров определяется автоматически на основе пороговых расстояний.</p>
+                        <button onclick="runClustering('maximin')" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded transition">
+                            Выполнить Максимин
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Результаты и График -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+                    <h3 class="text-lg font-semibold text-white mb-2">Пузырьковая диаграмма кластеров</h3>
+                    <p class="text-sm text-gray-400 mb-4">Ось X — Частота ЦП (ГГц) | Ось Y — Вес (кг) | <span class="text-teal-300">Размер точки — Объем ОЗУ (ГБ)</span></p>
+                    <div id="plotDiv" class="w-full h-[450px]"></div>
+                </div>
+
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+                    <h3 class="text-lg font-semibold text-white mb-4">Текстовая расшифровка групп</h3>
+                    <div id="resultsContent" class="space-y-4 text-sm">
+                        <p class="text-gray-400">Запустите алгоритм для отображения результатов...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colors = ['#14b8a6', '#a855f7', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899'];
+
+        async function runClustering(method) {
+            const data = {
+                method: method,
+                k: document.getElementById('k_input').value
+            };
+
+            const res = await fetch('/api/cluster', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(r => r.json());
+
+            renderResults(res.clusters);
+            renderPlot(res.clusters);
+        }
+
+        function renderResults(clusters) {
+            const container = document.getElementById('resultsContent');
+            container.innerHTML = '';
+            
+            clusters.forEach((c, index) => {
+                const color = colors[index % colors.length];
+                
+                // Красивое форматирование прототипа
+                const pCpu = c.prototype[0].toFixed(2);
+                const pRam = c.prototype[1].toFixed(1);
+                const pWeight = c.prototype[2].toFixed(2);
+
+                let html = `
+                <div class="p-4 rounded-lg bg-gray-700 border-l-4" style="border-color: ${color}">
+                    <h4 class="font-bold text-white mb-2">Кластер ${c.cluster_id} 
+                        <span class="text-gray-400 font-normal text-xs ml-2">
+                            (Центр группы: Частота ${pCpu} ГГц, ОЗУ ${pRam} ГБ, Вес ${pWeight} кг)
+                        </span>
+                    </h4>
+                    <ul class="list-disc pl-5 text-gray-300 space-y-2">
+                `;
+                
+                c.objects.forEach(obj => {
+                    // Красивое форматирование каждого ноутбука
+                    html += `
+                        <li>
+                            <span class="text-white font-medium">${obj.name}</span> 
+                            <span class="text-gray-400 text-xs ml-2 bg-gray-800 px-2 py-1 rounded">
+                                Частота ЦП: <span class="text-gray-200">${obj.features[0]} ГГц</span> | 
+                                ОЗУ: <span class="text-gray-200">${obj.features[1]} ГБ</span> | 
+                                Вес: <span class="text-gray-200">${obj.features[2]} кг</span>
+                            </span>
+                        </li>`;
+                });
+                html += `</ul></div>`;
+                container.innerHTML += html;
+            });
+        }
+
+        function renderPlot(clusters) {
+            const plotData = [];
+            
+            clusters.forEach((c, index) => {
+                const x = c.objects.map(obj => obj.features[0]); // Ось X - Частота
+                const y = c.objects.map(obj => obj.features[2]); // Ось Y - Вес
+                // Размер точки зависит от ОЗУ (умножаем на 1.5 и добавляем базовый размер 8 для наглядности)
+                const sizes = c.objects.map(obj => obj.features[1] * 1.5 + 8); 
+                const texts = c.objects.map(obj => `${obj.name}`);
+
+                // Точки самих ноутбуков
+                plotData.push({
+                    x: x, y: y,
+                    mode: 'markers+text',
+                    type: 'scatter',
+                    name: `Кластер ${c.cluster_id}`,
+                    text: texts,
+                    textposition: 'top center',
+                    marker: { 
+                        size: sizes, 
+                        color: colors[index % colors.length],
+                        line: { color: 'rgba(255, 255, 255, 0.5)', width: 1 },
+                        opacity: 0.8
+                    }
+                });
+
+                // Точка эталонного прототипа (в виде белой звездочки)
+                plotData.push({
+                    x: [c.prototype[0]], y: [c.prototype[2]],
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `Центр кластера ${c.cluster_id}`,
+                    marker: { 
+                        size: c.prototype[1] * 1.5 + 8, 
+                        symbol: 'star', 
+                        color: '#ffffff', 
+                        line: {color: colors[index % colors.length], width: 2} 
+                    },
+                    hoverinfo: 'none'
+                });
+            });
+
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { l: 50, r: 20, b: 50, t: 20 },
+                font: { color: '#9ca3af' },
+                xaxis: { title: 'Частота ЦП (ГГц)', gridcolor: '#374151', zeroline: false },
+                yaxis: { title: 'Вес (кг)', gridcolor: '#374151', zeroline: false },
+                showlegend: true,
+                legend: { orientation: 'h', y: -0.2 }
+            };
+
+            Plotly.newPlot('plotDiv', plotData, layout, {responsive: true});
+        }
+    </script>
+</body>
+</html>
